@@ -1,7 +1,7 @@
 ---
-For_Agent: 用 VM 替换本地 proot 的方案已定型：从 Podroid 制品抽出 guest 资产，在应用内直接用 qemu-system-aarch64（TCG）启动。未经批准不要写产品代码
-repo: https://github.com/Timhub-135/Operit（分支 docs/podroid-vm-replacement-design）
-status: 设计已按定型方案改写；未改动任何产品代码
+For_Agent: 用 VM 替换本地 proot 的方案已定型并开始实施：从 Podroid 制品抽出 guest 资产，随包分发，在应用内直接用 qemu-system-aarch64（TCG）启动
+repo: https://github.com/Timhub-135/Operit（分支 docs/podroid-vm-replacement-design 的目标态；实现落在 terminal 子模块）
+status: 第一阶段（启动层 + 终端契约）已实现并编译通过，等待真机验收
 ---
 
 # 用自建 QEMU 启动层替换本地 proot 用户空间
@@ -42,12 +42,12 @@ proot 通过 ptrace 翻译系统调用，拿不到真实的 user namespace 与 c
 
 | # | 决策 | 选项 |
 | --- | --- | --- |
-| P2 | 体积与分发 | guest 资产 + QEMU 合计约 **311.8 MB**。随包（APK 从 480.8 MB 涨到约 790 MB）／首启按需下载（需哈希校验与失败恢复）／拆 flavor |
+| P2 | 体积与分发 | **已定：随包分发**（guest 资产 + QEMU 一起打进发布包，首启不下载）。体积影响与实际 APK 大小记在 [4_ImplementationProgress.md](4_ImplementationProgress.md) |
 | P3 | 老用户迁移 | proot 环境被替换后，用户在里面装的东西不会自动出现。不做迁移（更新说明写清）／提供手工导入说明（注意：导出与删除入口已放弃） |
 | P4 | x86_64 设备 | 只支持 arm64（与今天随包 rootfs 的 ABI 一致）／另建 x86_64 的 QEMU 与 guest 资产（成本翻倍） |
 | P6 | 资产长期来源 | 继续取 Podroid 的 release 制品（省事，但绑定他人发版与 GPL 义务）／自建构建链（内核 + rootfs + QEMU 交叉编译，成本高但完全自主） |
 | P7 | 许可与标注 | 必须做：GPLv2 源码提供、Podroid 与 Alpine 的归属标注、不声称自研。具体形式（应用内许可页 / 仓库文档 / 下载页）待定 |
-| P8 | proot 路径的退役节奏 | 立即删除／保留一个发布周期（能力检测下隐藏），第二个版本再删 |
+| P8 | proot 路径的退役节奏 | 立即删除／保留一个发布周期（能力检测下隐藏），第二个版本再删。当前 proot 代码与其 rootfs 资产都还在，发布包同时带两套环境 |
 
 ## 非目标
 
@@ -61,3 +61,4 @@ proot 通过 ptrace 翻译系统调用，拿不到真实的 user namespace 与 c
 - [1_PodroidAnalysis.md](1_PodroidAnalysis.md)：Podroid 的架构、约束与经验结论，含本方案要复用的具体参数
 - [2_ReplacementDesign.md](2_ReplacementDesign.md)：启动层设计、接口契约、生命周期、体积、许可、迁移与风险
 - [3_EmulatorAndVerification.md](3_EmulatorAndVerification.md)：模拟器结论、PC 上的参照实现（已跑通）与真机验收清单
+- [4_ImplementationProgress.md](4_ImplementationProgress.md)：第一阶段的实施记录、构建装配方式与尚未完成的部分
