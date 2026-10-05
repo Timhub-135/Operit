@@ -129,11 +129,40 @@ adb install -r -t app/build/outputs/apk/debug/app-debug.apk
 - 本轮的处理是把模型配置的 provider 切到 `Deepseek Models`（endpoint / key / model 名都不变），请求随即正常，且 assistant 历史里能看到 `reasoning_content` 被回填
 - 待决策：是否给通用 OpenAI Chat 路径也加上「按 thinking 规则声明后回填 reasoning_content」的能力（可复用 `ThinkingQualityMapping` 的规则 JSON 加一个字段），还是维持现状、由文档说明「DeepSeek 系模型走网关时请选 DeepSeek provider」
 
+## 性能基线（远端路径）
+
+测量环境：AVD `operit_x86`（x86_64、Android 16、`-gpu host`）× 容器 `operit-ssh-test`（宿主 Intel Core Ultra 9 185H，容器内可见 2 核 / 3.9 GB，Python 3.10.12，pandoc 2.9.2.1，tmux 3.2a），经模拟器 NAT 访问 `10.0.2.2:2222`。下列数值都取自 logcat 标记的时间戳差值，不是手工掐表。
+
+会话就绪：
+
+| 阶段 | 耗时 |
+| --- | --- |
+| 进程内首个会话：创建会话到 SSH 传输就绪（TCP + KEX + 认证） | 1730 ms |
+| 通道打开 + 就绪握手标记 + 首个提示符 | 139 ms |
+| 冷启动首个会话合计（到 READY） | 1869 ms |
+| 复用连接后新建会话（到 READY） | 68 ms |
+
+命令往返（可见会话里执行 `echo ROUNDTRIP-OK`）：写入到远端首字节 4 ms，到命令完结（命中提示符）7 ms。
+
+磁盘与进程：
+
+- 远端目标不解压 rootfs：设备上 `ps -A -o NAME | grep -c proot` 为 0；`files/usr` 仅 180 KB，且应用数据里那份 rootfs 包仍是旧的 `v4.18.0`，说明远端路径从未触碰它
+- 应用数据目录 97 MB，其中 64 MB 是旧版 rootfs 包遗留、32 MB 是 toolpkg 缓存；远端路径自身只新增 `files/ssh` 24 KB（known_hosts 与测试私钥）
+- 随包资产 62.3 MB，debug APK 480.8 MB
+- 目标机固定负载：`sum(range(5_000_000))` 0.040 s，20 万次字符串反转 0.104 s
+
+CPU：
+
+- 启动阶段与终端画布渲染会把应用推到数百 %，这是首启初始化与模拟器渲染（软件或宿主 GPU）主导，与 SSH 路径无关
+- 启动完成、会话已连接的空闲状态为 2.9% CPU（`top -b -n 2 -d 2` 差值，聊天页前台，此时无 proot 进程）
+
+仍未覆盖：本地 proot 侧的对照数据需要 arm64 设备（x86_64 模拟器跑不了随包 rootfs），所以「何时仍然值得用本地环境」的判断还缺一半数据；`npm install` 与编译类重负载未测，且容器只有 2 核，绝对值不代表真实服务器。
+
 ## 环境限制与未覆盖项
 
 - 模拟器是 x86_64，而应用只打包 `arm64-v8a`。Compose 界面与 SSH 会话（纯 Java 的 jsch）不受影响，实测通过；但依赖原生库的功能（QuickJS 工具包、MNN/llama 本地模型、sherpa 语音）无法在该模拟器上验证
 - 本地方案（proot + rootfs）在 x86_64 模拟器上不可用，未做回归；本地方案需要在 arm64 设备上验证
-- 本轮已覆盖：对话级远端命令执行、tmux、窗口 resize 后的 `stty size`、反向隧道（含 SFTP 回连）、MCP 桥双向连通、私钥认证、目标机上的 arXiv → markdown
-- 仍未覆盖：安装真实的第三方 MCP 插件（需要 MCP 仓库联网拉包）后走一遍插件调用；远端 `sshfs` 挂载（容器缺 FUSE 权限，未装 sshfs）；性能对比（阶段 0 的基线）
+- 本轮已覆盖：对话级远端命令执行、tmux、窗口 resize 后的 `stty size`、反向隧道（含 SFTP 回连）、MCP 桥双向连通、私钥认证、目标机上的 arXiv → markdown、远端路径的会话就绪与命令往返基线
+- 仍未覆盖：安装真实的第三方 MCP 插件（需要 MCP 仓库联网拉包）后走一遍插件调用；远端 `sshfs` 挂载（容器缺 FUSE 权限，未装 sshfs）；本地 proot 侧的对照性能数据（见上一节）
 - 容器镜像缺少 `ca-certificates` 时所有 HTTPS 都会以 `curl: (77) error setting certificate file` 失败，表现为「网络不通」。本轮先装上 `ca-certificates` 才验证 arXiv 抓取；`tools/ssh_test_host/Dockerfile` 应把该包写进镜像，避免复现验证时误判
 - 提示文字在模拟器上仍显示英文（应用语言未切到中文），属测试环境设置，不是缺陷
