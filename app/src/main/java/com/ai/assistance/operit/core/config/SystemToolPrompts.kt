@@ -109,7 +109,7 @@ object SystemToolPrompts {
                     ToolParameterSchema(
                         name = "environment",
                         type = "string",
-                        description = "optional, execution environment. Values: \"android\" (default, Android file system) | \"linux\" (local Ubuntu 24 terminal environment via proot; Linux paths like /home/... /etc/hosts) | \"repo:<repositoryName>\" (attached local storage repository)",
+                        description = "optional, execution environment. Values: \"android\" (default, Android file system) | \"linux\" (the Linux execution target configured in the terminal settings, a remote SSH host by default; use Linux paths like /home/... /etc/hosts) | \"repo:<repositoryName>\" (attached local storage repository)",
                         required = false
                     ),
                     ToolParameterSchema(
@@ -256,7 +256,7 @@ object SystemToolPrompts {
                     ToolParameterSchema(
                         name = "environment",
                         type = "string",
-                        description = "可选，执行环境。取值：\"android\"（默认，Android文件系统）| \"linux\"（本地Ubuntu 24终端环境，通过proot实现；路径用Linux格式，如/home/...、/etc/hosts）| \"repo:<仓库名>\"（附加本地储存仓库）",
+                        description = "可选，执行环境。取值：\"android\"（默认，Android文件系统）| \"linux\"（终端设置里配置的 Linux 执行目标，默认是远端 SSH 主机；路径用 Linux 格式，如/home/...、/etc/hosts）| \"repo:<仓库名>\"（附加本地储存仓库）",
                         required = false
                     ),
                     ToolParameterSchema(

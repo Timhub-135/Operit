@@ -89,6 +89,11 @@ private fun getOpenSourceLibraries(): List<OpenSourceLibrary> {
         OpenSourceLibrary("Apache FTPServer", "FTP server library", "Apache-2.0", "https://mina.apache.org/ftpserver-project/"),
         OpenSourceLibrary("Apache SSHD", "SSH server and client library", "Apache-2.0", "https://mina.apache.org/sshd-project/"),
         OpenSourceLibrary("JSch", "Java SSH client library", "BSD-3-Clause", "https://github.com/mwiede/jsch"),
+        // 本地 Ubuntu rootfs 资产内预装的工具链，随 APK 分发，因此一并列出
+        OpenSourceLibrary("OpenSSH client", "SSH client bundled in the local Ubuntu rootfs", "BSD-2-Clause", "https://www.openssh.com/"),
+        OpenSourceLibrary("OpenSSL", "TLS and cryptography library used by the bundled OpenSSH client", "Apache-2.0", "https://www.openssl.org/"),
+        OpenSourceLibrary("libfido2", "FIDO2/U2F support for the bundled OpenSSH client", "BSD-2-Clause", "https://developers.yubico.com/libfido2/"),
+        OpenSourceLibrary("libcbor", "CBOR parsing used by libfido2", "MIT", "https://github.com/PJK/libcbor"),
         OpenSourceLibrary("Jsoup", "Java HTML parser", "MIT", "https://jsoup.org/"),
         OpenSourceLibrary("Ktor", "Asynchronous networking framework", "Apache-2.0", "https://ktor.io/"),
         OpenSourceLibrary("MCP SDK", "Model Context Protocol SDK", "MIT", "https://github.com/modelcontextprotocol/kotlin-sdk"),
