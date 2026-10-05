@@ -31,6 +31,8 @@ rootless 的 Android 应用（`com.excp.podroid`），在 stock Android 8+ 上�
 
 后端差异是这个项目最大的 bug 来源，其文档明确要求两个后端都要在真机上验证。
 
+**本方案只采用 QEMU/TCG 这一条**：不需要 pKVM 设备、不需要 `pm grant`，覆盖面最广；代价是软件模拟的性能，靠下面的性能旋钮缓解。AVF 相关的实现与约束只作为背景记录，不进入设计。
+
 ## 启动管线（对集成最要紧的部分）
 
 1. initramfs 里的 `init-podroid`（约 45 行）挂载持久 ext4（`/dev/vda` → upper）与只读 squashfs（`/dev/vdb` → lower），叠加 overlayfs，然后把挂载点搬进新根并 `switch_root` 到 busybox `/sbin/init`
@@ -71,10 +73,35 @@ host bridge 的细节值得抄成"注意事项"：`/dev/hvc2` 是默认开启回
 
 对我们同样适用的结论：**VM 的 guest 系统层是需要长期演进的资产**，落地时就要有版本锚点与迁移钩子，否则每次升级都要用户重建环境。
 
+## 本方案要从它的制品里抽取什么
+
+抽取动作只做一次，之后按哈希固定版本：
+
+```
+tar -xf Podroid-v1.2.9-release.apk \
+    assets/vmlinuz-virt assets/initrd.img assets/alpine-rootfs.squashfs \
+    lib/arm64-v8a/libqemu-system-aarch64.so lib/arm64-v8a/libslirp.so
+```
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `vmlinuz-virt` | `6c4a6b1fff352b618cd661c8938803e5a4e16a124efbe7c0450199c2ef42eea6` |
+| `initrd.img` | `57ae98b7aa54271da846e8c57d9c31f5474b452e77561a69263309931ce403dc` |
+| `alpine-rootfs.squashfs` | `04b7dfdaebeb1dccce6824a22c8cceaa1483aef6a7643bb9ccd96feee3618121` |
+| `libqemu-system-aarch64.so` | `0eccc1a9fcf26906ba6e855223a22832e1c6fc614787498cc274c1099766448f` |
+| `libslirp.so` | `349aeb91b0e998c2dc6d34e8e4a92f578402bec6210b781a0a37e36a4fa3515e` |
+
+配套要在我们这边自己实现的部分：
+
+- **执行方式**：原生件以 `.so` 名义打包、按可执行文件运行；`ProcessBuilder` 的工作目录设为 `filesDir`，`LD_LIBRARY_PATH` 指向 `nativeLibraryDir` 与 `filesDir`，否则 `libslirp.so` 找不到
+- **进程收敛**：Podroid 用一个 C 写的 launcher 设置 `PR_SET_PDEATHSIG(SIGKILL)`，让 QEMU 随应用进程一起死。我们至少要有等价保证（前台服务 + 停止时显式收敛），否则会留下孤儿 VM 占着 3 GB 内存
+- **设备与通道布局**：见 [2_ReplacementDesign.md](2_ReplacementDesign.md) 的启动参数一节，已在 PC 上验证
+- **不做**：它的 Compose UI、X11/VNC 查看器、USB 直通、9p Downloads 共享、AVF 后端、容器备份等
+
 ## 它的约束
 
 - 仅 arm64：没有 x86_64 设备的现成实现，也没有 x86_64 guest 资产
-- AVF 需要设备上报 `android.software.virtualization_framework`（Pixel 级）并 `pm grant`
+- AVF 需要设备上报 `android.software.virtualization_framework`（Pixel 级）并 `pm grant`（本方案不用）
 - 不可绑特权端口（无 `CAP_NET_BIND_SERVICE`），SSH 在 9922
 - 原生件必须 16 KB 页对齐（Android 13+ 强制）
 - 体积换能力：VM 资产合计约 312 MB

@@ -1,12 +1,12 @@
 ---
-For_Agent: 当前 PC 上运行 Podroid 的实测结论与可选验证路径；结论是库存模拟器跑不了 arm64 镜像
+For_Agent: 模拟器为什么不能用（逐版本证据）、PC 参照实现的实测结果与设备端验收清单
 ---
 
-# 模拟器与验证路径
+# 验证环境与实测记录
 
 ## 结论先说
 
-**在当前 PC 上无法用库存 Android 模拟器运行 Podroid。** Podroid 的 VM 资产与原生件只有 arm64（`libqemu-system-aarch64.so`、arm64 内核、arm64 Alpine rootfs），而宿主是 x86_64；Android 模拟器从若干年前起就只允许"系统镜像架构与宿主一致"，能跑 arm64 镜像的经典引擎已经移除。下面是被验证过的证据与可选替代路径。
+**库存 Android 模拟器不能运行 arm64 guest**，因此本方案的验证不依赖模拟器：guest 的启动参数与契约先在 PC 上用发行版 QEMU 跑通（已完成），设备端只验证 Android 侧的启动层与集成。Podroid 的 VM 资产与原生件只有 arm64（`libqemu-system-aarch64.so`、arm64 内核、arm64 Alpine rootfs），而宿主是 x86_64；Android 模拟器从若干年前起就只允许"系统镜像架构与宿主一致"，能跑 arm64 镜像的经典引擎已经移除。下面是逐版本证据。
 
 ## 实测证据（逐版本）
 
@@ -33,33 +33,34 @@ For_Agent: 当前 PC 上运行 Podroid 的实测结论与可选验证路径；�
 
 | 资产 | 位置 |
 | --- | --- |
-| arm64 AVD（已调参） | `%USERPROFILE%\.android\avd\podroid_arm64.avd` |
 | Podroid release APK v1.2.9（297.3 MB） | `tmp/podroid/Podroid-v1.2.9-release.apk` |
-| 旧版模拟器 30.3.5 / 30.4.5 / 31.3.10 | `tmp/android-emulator-arm64/emu-*/` |
-| 抓取并重放的 QEMU 启动器 | `tmp/android-emulator-arm64/run-arm64-avd.cmd`，生成脚本 `tmp/cn/build-arm64-launcher.js` |
-| 直接跑 guest 的夹具（路径 C，可用） | `tmp/podroid/rig/`：`run-guest.sh`（QEMU 启动）、`chan.py`（virtio-console 通道读写）、`validate-guest.sh` 与 `validate-guest2.sh`（断言脚本）、`resize-test.py`、`inspect-guest.sh`；资产在 `tmp/podroid/rig/assets/`，容器 `podroid-rig` 挂载该目录到 `/rig` |
+| 抽取出的 guest 资产（内核 / initrd / squashfs） | `tmp/podroid/rig/assets/`，哈希见 [1_PodroidAnalysis.md](1_PodroidAnalysis.md) |
+| 抽取出的原生件（QEMU / slirp） | `tmp/podroid/rig/lib/arm64-v8a/` |
+| **参照实现夹具（可用）** | `tmp/podroid/rig/`：`run-guest.sh`（规范启动参数）、`chan.py`（virtio-console 通道读写）、`validate-guest.sh` / `validate-guest2.sh`（断言）、`resize-test.py`、`inspect-guest.sh`、`identify.sh`；容器 `podroid-rig` 把该目录挂到 `/rig` |
+| 模拟器路线的遗留物（不再使用） | `%USERPROFILE%\.android\avd\podroid_arm64.avd`、`tmp/android-emulator-arm64/emu-*/`、`tmp/android-emulator-arm64/run-arm64-avd.cmd` 与生成脚本 `tmp/cn/build-arm64-launcher.js` |
 
-## 四条可选路径
+## 验证策略（方案定型后）
 
-| 路径 | 做法 | 能得到什么 | 成本 | 建议 |
-| --- | --- | --- | --- | --- |
-| A 把 VM 栈端口到 x86_64 | 为该架构各自构建 QEMU、内核、Alpine rootfs，跑在现有 x86_64 AVD（Android 侧有 WHPX 加速，只有内层 VM 走 TCG） | 唯一能在模拟器里形成可用开发闭环的路径 | 大：三套跨架构构建；Operit 自身的原生件也要出 x86_64 变体；产物只服务开发，生产仍是 arm64 | 若"模拟器可测"是长期需求则投入，否则不做 |
-| B 真机 arm64 | Pixel 级设备走 AVF（快），其他 arm64 设备走 QEMU/TCG | 与上游一致的验证面，两个后端都能覆盖 | 需要设备 | **集成验收走这条** |
-| C 在 PC 上直跑 Podroid 的 guest | 从 release APK 抽出 `vmlinuz-virt`、`initrd.img`、`alpine-rootfs.squashfs`，在 Linux 容器里用 `qemu-system-aarch64`（TCG）启动 | guest 的启动标记、OpenRC 服务、podman、resize 通道、host bridge 协议——除了 Android 侧的胶水以外的一切 | 小，一小时级 | **契约与 guest 侧工作现在就走这条** |
-| D 继续 QEMU 直启 rig | 把直接重放 QEMU 的启动器补完（DLL 布局、显示/GPU 通道、模拟器自有 socket 协议） | 模拟器里的 UI 与图形栈 | 不确定，属不受支持的配置 | 只有在必须看图形/UI 时才继续 |
+方案已定为「应用内直接跑 `qemu-system-aarch64`（TCG）」，于是验证分成三层，各层的职责不重叠：
 
-推荐组合：**C 立刻做契约验证，B 做集成验收，A 视长期需求再投入，D 按需**。
+| 层 | 载体 | 验证什么 | 状态 |
+| --- | --- | --- | --- |
+| 参照实现 | PC 上的 Linux 容器 + 发行版 QEMU | **规范启动参数**与 guest 侧契约：设备顺序、通道用途、启动标记、resize、host 桥、容器能力 | 已跑通（见下文实测） |
+| 设备端启动层 | 真实 arm64 手机 | 应用内子进程启动、socket 通道、前台服务生命周期、性能与温升、存储扩容 | 待设备 |
+| 集成验收 | 真实 arm64 手机 | 终端目标切换、就绪握手、隐藏执行、文件系统、MCP 共享会话、远端目标不受影响 | 待设备 |
 
-## 路径 C 的具体做法（可直接执行）
+模拟器在这一版方案里**不参与验证**：guest 与 QEMU 都是 arm64，而 x86_64 宿主上的模拟器既不允许 arm64 系统镜像（见上文逐版本证据），也无法用 x86_64 端口替代。若要恢复"模拟器可测"，唯一办法是给 x86_64 另建一套 QEMU 与 guest 资产，成本翻倍（对应决策 P4）。
 
-1. 从 `tmp/podroid/Podroid-v1.2.9-release.apk` 抽出 `assets/vmlinuz-virt`、`assets/initrd.img`、`assets/alpine-rootfs.squashfs`
-2. 准备一个 Linux 容器（Debian/Ubuntu + `qemu-system-arm`），把三个资产挂进去
-3. 依 Podroid 的 QEMU 参数启动 guest：两个 virtio 块设备分别是持久 ext4（upper）与只读 squashfs（lower），外加 virtio-console 与串口；`init-podroid` 会自行叠加 overlay 并 `switch_root`
-4. 断言：串口日志里出现 `Starting SSH...` / `Almost ready...` / `Ready!`；进入 guest 后 `podman run --rm alpine echo ok` 成功；往控制通道写 `RESIZE 40 120` 后 guest 的 `stty size` 变化
+## 参照实现的具体做法（可直接执行）
 
-这套断言就是上表里"接口契约"一栏的可执行版本，也是将来在真机上要重跑的那一份。
+1. 从 `tmp/podroid/Podroid-v1.2.9-release.apk` 抽出三个 guest 资产与 `libqemu-system-aarch64.so`、`libslirp.so`
+2. 准备一个 Linux 容器（Debian/Ubuntu + `qemu-system-arm`），把资产挂进去
+3. 按 [2_ReplacementDesign.md](2_ReplacementDesign.md) 的启动参数启动 guest：两个 virtio 块设备分别是持久 ext4（vda）与只读 squashfs（vdb），加串口与三条 virtio-console
+4. 断言：串口日志出现 `Starting SSH...` / `Almost ready...` / `Ready!`；guest 内 `podman run` 输出预期内容；往控制通道写 `RESIZE rows cols` 后 `stty size < /dev/hvc0` 与 `/run/term_size` 同步变化；host 通道能收到 guest 自发的一行
 
-## 路径 C 的实测结果（已完成）
+这套断言既是"接口契约"一栏的可执行版本，也是设备端要重跑的那一份。
+
+## 参照实现的实测结果（已完成）
 
 在本机用普通 QEMU 直接跑 Podroid 的 guest：把 release APK 里的 `vmlinuz-virt`、`initrd.img`、`alpine-rootfs.squashfs` 抽出来，按 Podroid `QemuEngine.buildCommand()` 的设备布局在 Linux 容器里启动（两个 virtio 块设备、SLIRP 网络、PL011 串口做启动日志、三条 virtio-console 通道），把 Android 侧的 socket 换成 unix socket，于是同一批通道可以从宿主机直接驱动。
 
@@ -83,11 +84,28 @@ For_Agent: 当前 PC 上运行 Podroid 的实测结论与可选验证路径；�
 - **CN 网络下 Docker Hub 不可用**：`registry-1.docker.io` 被解析到无关地址并拒绝连接。换 `docker.m.daocloud.io` 这类镜像即可拉取成功——Operit 集成时应当在 guest 里预置 `registries.conf` 的镜像配置，否则用户第一次 `podman run` 必然失败
 - **非登录 SSH 的 PATH 很窄**：`podroid-notify` 等工具在 `/usr/local/bin`，直接 `command -v` 会找不到，用绝对路径或在登录 shell 里调用
 
-## 真机验收清单（路径 B，等设备到位）
+## 设备端验收清单（arm64 真机，等设备到位）
 
-- 设备能力：`adb shell pm list features | grep virtualization` 决定是否有 AVF；有则 `pm grant` 两个权限后强停重启才会生效
-- 启动：`console.log`（debug 构建 `run-as` 可读）出现 `Ready!`；无 rootfs 解压进应用数据目录
-- 终端：就绪握手三段信号、resize 后 guest `stty size` 与请求值一致、退出码正确
-- 能力：guest 内 `podman run` 可用；文件共享双向可写；隐藏执行的超时能真正杀掉进程
-- 集成：`environment="linux"` 落到 VM；MCP 共享会话可用；设置页显示当前后端
-- 两个后端各跑一遍：AVF 与 QEMU/TCG 的行为差异是这个领域最常见的回归来源
+启动层：
+
+- 资产校验通过后能起子进程，串口日志写进应用私有目录，`Ready!` 在超时内出现（debug 构建可用 `run-as` 读日志）
+- 停止路径真的把 QEMU 收敛掉（无孤儿进程、无残留 socket）；崩溃路径不自动重启、有明确报错与日志尾部
+- 前台服务存活：切后台、锁屏、长时间空闲后 VM 仍在；内存与温升有记录
+
+契约（在 PC 参照实现上已通过的同一组断言）：
+
+- 终端：三段就绪握手、`stty size` 在 resize 后与请求值一致、退出码正确
+- 隐藏执行：超时能真正杀掉进程组；输出与退出码分类正确
+- host 桥：guest 自发的一行能被应用收到并正确处理
+
+集成：
+
+- `TerminalTarget.LOCAL` 指向 VM；`environment="linux"` 落到 VM；远端 SSH 目标不受影响
+- 文件系统 provider 能读写 guest 内路径；MCP 共享会话可用
+- guest 内 `podman run` 可用（CN 镜像预置生效）
+- 存储：`storage.img` 扩容后 guest 内可见新容量；清空环境后能重新初始化
+
+性能（记录基线，不做硬性门槛）：
+
+- 冷启动到 `Ready!` 的时间、二次启动时间
+- 容器启动与常见操作的耗时，以及与 proot 路径的对照（proot 在 arm64 真机上可测，模拟器上不可测）

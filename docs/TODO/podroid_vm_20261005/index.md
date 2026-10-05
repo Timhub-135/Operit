@@ -1,56 +1,63 @@
 ---
-For_Agent: 用真实虚拟机替换本地 proot 用户空间的设计；本次只做设计与验证环境勘察，未经批准不要写产品代码
-repo: https://github.com/Timhub-135/Operit（分支 feat/ssh-default-terminal-target 之后的独立方案）
-status: 设计进行中，等待批准；未改动任何产品代码
+For_Agent: 用 VM 替换本地 proot 的方案已定型：从 Podroid 制品抽出 guest 资产，在应用内直接用 qemu-system-aarch64（TCG）启动。未经批准不要写产品代码
+repo: https://github.com/Timhub-135/Operit（分支 docs/podroid-vm-replacement-design）
+status: 设计已按定型方案改写；未改动任何产品代码
 ---
 
-# 用 Podroid 式虚拟机替换本地 proot 用户空间
+# 用自建 QEMU 启动层替换本地 proot 用户空间
 
-## 为什么做
+## 方案定型
 
-本地目标今天是一套 proot 用户空间：Ubuntu 24.04 ARM64 rootfs 由 proot 以 ptrace 拦截系统调用运行。它能跑 shell、apt、node、python，但有几条硬限制：
+本地目标不再使用 proot 用户空间，改为**在应用进程外启动一台自带内核的 Alpine 虚拟机**：
 
-- 需要特权的操作一律不可用，`CAP_SYS_ADMIN`、mount 命名空间、`io_uring`（被 seccomp 拦）、TAP 网络都拿不到
-- **容器跑不起来**：`podman`、`docker`、`LXC` 依赖 user namespace 与 cgroup 的真实语义，proot 的翻译层满足不了
-- 每个系统调用都过一次 ptrace，重负载比原生慢一个量级
+- guest 资产（内核、initramfs、rootfs）**从 Podroid 的 release APK 抽出**，按哈希固定版本
+- 在设备上直接执行 **`qemu-system-aarch64`（TCG，软件模拟）**，不依赖 AVF、不依赖 root、不依赖 pKVM
+- 由 Operit 自己承担启动层：设备布局、三条 virtio-console 通道、串口日志、SLIRP 网络、持久盘与生命周期
+- Podroid 只是**资产来源与经验来源**，不集成它的应用、也不合并它的代码
 
-按 Podroid 的做法换成一台**自带内核的真实虚拟机**（QEMU/TCG，或在支持 pKVM 的设备上走 AVF）后，容器、mount、网络都按服务器的方式工作，且不再需要把 rootfs 挂在应用进程里翻译系统调用。
+选这条路的理由：上一轮在本机用普通 QEMU 直接跑通了 Podroid 的 guest（见 [3_EmulatorAndVerification.md](3_EmulatorAndVerification.md)），启动参数、通道协议、挂载结构与容器能力都已在 PC 上验证；把这些参数搬到 Android 上执行，是改动面最小、可控性最高的一条路。
 
-## 现状一句话
+## 为什么值得替换 proot
 
-`TerminalTarget.LOCAL` 今天等于 proot + Ubuntu rootfs（62.3 MB 随包资产，见 `docs/TODO/ssh_default_terminal_20261004/4_LocalUbuntuSshPackaging.md`）；远端 SSH 已是默认目标，本地目标降级为显式选择。
+proot 通过 ptrace 翻译系统调用，拿不到真实的 user namespace 与 cgroup 语义，因此 podman / docker / LXC 这类要在服务器上跑的东西根本起不来；同时每个系统调用都要过一次拦截，重负载比原生慢一个量级。换成带自有内核的 VM 之后，容器、mount、网络都按服务器的方式工作。
 
-## 意图与预期结果
+## 复用什么、不复用什么
 
-- 本地目标改为真实 VM，用户在同一入口拿到"能跑容器"的 Linux 环境
-- 保持既有接口：`TerminalTarget.LOCAL` 语义、`environment="linux"`、`repo:`、AIDL 仅增量，已发布 v1.12.2 的行为不回退
-- 明确 VM 的后端选择（AVF / QEMU-TCG）、体积策略与老用户迁移路径
+| 复用 | 说明 |
+| --- | --- |
+| `vmlinuz-virt`（20.0 MB） | 自带内核 7.1.5，已含 overlayfs / netfilter / bridge / veth / tun / FUSE 等必需项 |
+| `initrd.img`（40.7 MB） | 内含 `init-podroid`：挂载持久 ext4 与只读 squashfs、叠 plain overlay、`switch_root` |
+| `alpine-rootfs.squashfs`（213.5 MB） | Alpine 3.24.2 + OpenRC + podman/crun/fuse-overlayfs/docker/LXC/dropbear |
+| `libqemu-system-aarch64.so`（36.6 MB） | 已按 Android NDK 交叉编译、16 KB 页对齐的 QEMU 可执行文件 |
+| `libslirp.so`（1.0 MB） | QEMU 的用户态网络后端 |
+| 启动参数与通道布局 | 设备顺序、通道用途、性能旋钮都是被验证过的既定事实 |
 
-## 参考实现
-
-[Podroid](https://github.com/ExTV/Podroid)：rootless 的 Android 应用，启动带自有内核的 Alpine 3.24 虚拟机，预装 podman / docker / LXC，另有 X11 桌面、SSH 与 guest→Android 桥。它的架构与踩坑记录见 [1_PodroidAnalysis.md](1_PodroidAnalysis.md)。
-
-它是**参考实现与验证夹具**，不是可并入的依赖：Operit 是 LGPL-3.0，Podroid 是 GPL-2.0-only，两者不能合并代码。形态上的取舍见 [2_ReplacementDesign.md](2_ReplacementDesign.md)。
+| 不复用 | 理由 |
+| --- | --- |
+| Podroid 的应用与引擎代码 | GPL-2.0-only 与 Operit 的 LGPL-3.0 不兼容，不能合并代码 |
+| 它的 UI、X11 桌面、USB 直通、9p 共享 | 与本方案的替换目标无关，能砍则砍 |
+| 它的 `libpodroid-launcher.so` | 可用更简单的方式达到同样目的（前台服务 + 子进程收敛），是否复用见 P6 |
 
 ## 待你拍板的决策
 
 | # | 决策 | 选项 |
 | --- | --- | --- |
-| P1 | 集成形态 | ① 外部应用集成（零许可冲突，但要用户另装一个 297 MB 的应用）② 自研 VM 层（无许可冲突，工期最长）③ 保留 proot 作轻量本地环境，VM 只在需要容器时启用 |
-| P2 | 体积策略 | 随包（APK 从 480.8 MB 涨到约 790 MB）／首启按需下载（约 312 MB，需校验与失败恢复）／拆 flavor |
-| P3 | 老用户迁移 | 不做迁移（新环境全新开始）／提供"从 proot 环境导出并手工导入"的说明（注意：导出与删除入口刚被放弃） |
-| P4 | x86_64 设备 | 只支持 arm64（与今天的 rootfs 一致）／另建 x86_64 guest 资产（成本翻倍） |
-| P5 | 模拟器验证 | **已定：走路径 C**——本机用普通 QEMU 直接跑 Podroid 的 guest，已完成并全部通过（见 [3_EmulatorAndVerification.md](3_EmulatorAndVerification.md)）；库存模拟器跑不了 arm64 镜像，真机验收仍需设备 |
+| P2 | 体积与分发 | guest 资产 + QEMU 合计约 **311.8 MB**。随包（APK 从 480.8 MB 涨到约 790 MB）／首启按需下载（需哈希校验与失败恢复）／拆 flavor |
+| P3 | 老用户迁移 | proot 环境被替换后，用户在里面装的东西不会自动出现。不做迁移（更新说明写清）／提供手工导入说明（注意：导出与删除入口已放弃） |
+| P4 | x86_64 设备 | 只支持 arm64（与今天随包 rootfs 的 ABI 一致）／另建 x86_64 的 QEMU 与 guest 资产（成本翻倍） |
+| P6 | 资产长期来源 | 继续取 Podroid 的 release 制品（省事，但绑定他人发版与 GPL 义务）／自建构建链（内核 + rootfs + QEMU 交叉编译，成本高但完全自主） |
+| P7 | 许可与标注 | 必须做：GPLv2 源码提供、Podroid 与 Alpine 的归属标注、不声称自研。具体形式（应用内许可页 / 仓库文档 / 下载页）待定 |
+| P8 | proot 路径的退役节奏 | 立即删除／保留一个发布周期（能力检测下隐藏），第二个版本再删 |
 
 ## 非目标
 
 - 不改 Android 端文件系统（`environment="android"`）语义
-- 不把 Podroid 的代码并入 Operit（许可不允许）
-- 不为 x86_64 宿主构建 guest 资产，除非 P4 确认
-- 不引入静默回落：后端按设备能力选择，但必须在设置页显示当前后端
+- 不引入 AVF 后端：本方案只用 QEMU/TCG，后端选择不再是一个维度
+- 不合并 Podroid 的代码，不把它的应用作为依赖
+- 不做静默回落：VM 起不来就报错并让用户显式切回远端 SSH 目标（远端仍是默认目标）
 
 ## 步骤文档
 
-- [1_PodroidAnalysis.md](1_PodroidAnalysis.md)：Podroid 的架构、约束、可复用的经验结论
-- [2_ReplacementDesign.md](2_ReplacementDesign.md)：替换方案、接口契约、体积与迁移、风险
-- [3_EmulatorAndVerification.md](3_EmulatorAndVerification.md)：模拟器实测结论与可选验证路径
+- [1_PodroidAnalysis.md](1_PodroidAnalysis.md)：Podroid 的架构、约束与经验结论，含本方案要复用的具体参数
+- [2_ReplacementDesign.md](2_ReplacementDesign.md)：启动层设计、接口契约、生命周期、体积、许可、迁移与风险
+- [3_EmulatorAndVerification.md](3_EmulatorAndVerification.md)：模拟器结论、PC 上的参照实现（已跑通）与真机验收清单
