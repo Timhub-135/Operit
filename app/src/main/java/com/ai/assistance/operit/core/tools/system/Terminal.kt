@@ -59,9 +59,12 @@ class Terminal private constructor(private val context: Context) {
 
     /**
      * 初始化终端管理器
+     *
+     * 远端目标只需已有可用的主机配置；本地目标会在这个过程中把 VM 起起来
+     * （安装资产、启动 QEMU、初始化 guest、建立 SSH 连接）。
      */
     suspend fun initialize(): Boolean {
-        return terminalManager.initializeEnvironment()
+        return terminalManager.ensureTargetConnected()
     }
 
     /**
