@@ -2,6 +2,22 @@ include_guard(GLOBAL)
 
 include(FetchContent)
 
+# GitHub is not reachable from every network. OPERIT_GITHUB_URL_PREFIX is
+# prepended verbatim to every GitHub URL this module resolves or downloads, so a
+# mirror that serves GitHub paths can be selected without editing call sites:
+#
+#   OPERIT_GITHUB_URL_PREFIX=https://ghfast.top/ ./gradlew :app:assembleDebug
+#
+# The value is read from the environment because CMake runs once per native
+# module (app, quickjs, avator/*, llm/*), and an empty prefix keeps the canonical
+# GitHub URLs that CI and GitHub-connected machines use. It can also be passed
+# explicitly, e.g. -DOPERIT_GITHUB_URL_PREFIX=https://ghfast.top/.
+set(
+    OPERIT_GITHUB_URL_PREFIX
+    "$ENV{OPERIT_GITHUB_URL_PREFIX}"
+    CACHE STRING "Prefix prepended to GitHub URLs fetched by this module"
+)
+
 function(operit_normalize_source_token out_var token)
     string(TOLOWER "${token}" normalized_token)
     string(REGEX REPLACE "[^a-z0-9_.-]" "_" normalized_token "${normalized_token}")
@@ -29,7 +45,7 @@ function(operit_resolve_git_ref out_var repository git_ref)
     endif()
 
     execute_process(
-        COMMAND git ls-remote "${repository}" "${git_ref}" "refs/heads/${git_ref}" "refs/tags/${git_ref}"
+        COMMAND git ls-remote "${OPERIT_GITHUB_URL_PREFIX}${repository}" "${git_ref}" "refs/heads/${git_ref}" "refs/tags/${git_ref}"
         OUTPUT_VARIABLE remote_refs
         ERROR_VARIABLE remote_error
         RESULT_VARIABLE remote_result
@@ -53,7 +69,13 @@ endfunction()
 function(operit_github_archive_url out_var repository resolved_sha)
     set(repository_without_suffix "${repository}")
     string(REGEX REPLACE "\\.git$" "" repository_without_suffix "${repository_without_suffix}")
-    string(REGEX REPLACE "^https://github.com/([^/]+)/(.+)$" "https://github.com/\\1/\\2/archive/${resolved_sha}.tar.gz" archive_url "${repository_without_suffix}")
+    string(
+        REGEX REPLACE
+        "^https://github.com/([^/]+)/(.+)$"
+        "${OPERIT_GITHUB_URL_PREFIX}https://github.com/\\1/\\2/archive/${resolved_sha}.tar.gz"
+        archive_url
+        "${repository_without_suffix}"
+    )
 
     if("${archive_url}" STREQUAL "${repository_without_suffix}")
         message(FATAL_ERROR "Only GitHub archive sources are supported by operit_github_archive_url: ${repository}")
