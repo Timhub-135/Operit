@@ -118,7 +118,9 @@ adb install -r -t app/build/outputs/apk/debug/app-debug.apk
 
 ## 测试中发现的问题（未修，待决策）
 
-- **键盘弹起时终端行数塌成 1 行**：`CanvasTerminalView.updateTerminalSize` 用 `height - contentTop - committedImeBottomInsetPx` 算行数；视图高度已经因 IME 缩小，再减一次 IME 高度就会接近 0，`coerceAtLeast(1)` 兜到 1 行。实测（远端 `stty size` 佐证）：软键盘关闭 `43x23`，键盘弹起 `43x8`（原生分辨率）/ `28x1`（override 分辨率）。这会让远端 tty 也变成 1 行，影响 `tmux`、`less`、进度条等全屏程序。属本次重构之前就存在的画布逻辑（本地 PTY 同样受影响），修它要动布局与 IME inset 的取值语义，改动面比本轮验证大，先记录
+- **键盘弹起时终端只剩个位数行，极端尺寸下塌成 1 行**：一度判为 IME inset 被重复相减，实测否定。嵌入式终端（`ComputerScreen` 传 `useLocalImeHandling = false`）不做任何 inset 相减；独立终端应用把窗口设为 `SOFT_INPUT_ADJUST_NOTHING` 后自己减一次。两种模式的算式都自洽，真正原因是布局被挤占：原生 1080×1920 下软键盘约 800 px、应用顶部栏约 336 px、底部控制行与输入行约 180 px、会话标签栏约 90 px，画布只剩约 600 px，按当前字号（约 60 px/行）约 9 行；把显示尺寸压到 720×1280 时画布高度归零，`coerceAtLeast(1)` 兜到 1 行，远端 tty 随之变成 1 行
+  - 证据链：`onSizeChanged: 1080x595` → `Requested window-change to 43x8` → 远端 `stty size` 读到 `8 43`；`wm size` 恢复后回到 `43x23` / `23 43`
+  - 这是 UX 取舍而不是算术缺陷：要拿回行数得在键盘弹起时收起工具栏与输入行、缩小字号，或允许画布覆盖键盘区域；`coerceAtLeast(1)` 是否改成保底若干行也需要产品决定
 - **模拟器软渲染导致 ANR**：`-gpu swiftshader_indirect` 下打开终端画布后 RenderThread 卡在 `egl_window_surface_t::swapBuffers → qemu_pipe_read`，主线程卡在 `DrawFrameTask::drawFrame`，触发 `ANR in … Input dispatching timed out`；换成 `-gpu host` 后不再复现。与代码无关，但复现验证时容易误判成应用缺陷
 
 ## 上游模型侧的问题（本轮定位）
