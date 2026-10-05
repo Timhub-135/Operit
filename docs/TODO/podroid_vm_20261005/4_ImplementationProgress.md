@@ -29,15 +29,19 @@ P2 已定：guest 资产与 QEMU 都打进发布包，首次启动不做下载�
 - **隐藏执行与文件访问**：都走 guest 自带的 dropbear（22 → 宿主回环端口），复用既有的 `SSHFileConnectionManager`，因此退出码、超时、SFTP 都是已经在用的实现，没有新机制。
 - **目标接线**：`TerminalTarget.LOCAL` 现在创建 `VmTerminalProvider`；`initializeSession`、隐藏执行入口、以及 app 侧的 `Terminal.initialize()` 都不再触碰 proot 的 rootfs 解压与 `common.sh` 生成，改走新增的 `TerminalManager.ensureTargetConnected()`。
 
-编译状态：`:terminal:compileDebugKotlin` 通过；`:app:assembleDebug` 见下（装配与打包一并验证）。
+编译状态：`:terminal:compileDebugKotlin` 通过；`:app:assembleDebug` 通过，产物 **713.6 MB**（对比改动前的 480.8 MB）。包内已核对到 `assets/vm/{vmlinuz-virt,initrd.img,alpine-rootfs.squashfs}` 与 `lib/arm64-v8a/{libqemu-system-aarch64.so,libslirp.so}`。体积里同时含有旧的 proot rootfs（62.3 MB）：按 P8 保留一个发布周期的话，去掉它可以回收这部分。
+
+构建期的两个坑，都是这次实际撞到的：
+
+- **依赖镜像**：`avator/mmd` 的 bullet3 走 FetchContent，其 URL 由 `cmake/operit_git_source.cmake` 的 `OPERIT_GITHUB_URL_PREFIX` 决定。该支持原本只在 `ci/cn-mirror-build` 分支上，本分支不带时依赖会直连 github.com 并失败；已把该提交并入本分支。注意它是 **CMake 缓存变量**，旧 `.cxx` 目录里缓存着空值，换环境后要删掉该目录才会重新取值
+- **被打断的构建会留下锁**：中途杀掉 Gradle 后，残留的 `cmake`/`ninja` 进程仍占着 `_deps` 里的下载文件，下一次构建会以"另一个程序正在使用此文件"失败，甚至表现为 Gradle 客户端与单次守护进程互相等待的假死。重试前先确认没有残留的 `cmake`/`ninja`，必要时清掉对应模块的 `.cxx`
 
 ## 尚未完成
 
 | 项 | 说明 |
 | --- | --- |
 | 真机验证 | 模拟器跑不了 arm64 guest，启动层只能在 arm64 真机上验收；PC 参照实现已把参数与契约固定下来 |
-| proot 退役（P8） | proot 的 provider、`initializeEnvironment`、`common.sh` 生成都还在树里，且旧的 rootfs 资产仍随包分发（发布包因此同时带两套环境） |
+| proot 退役（P8） | proot 的 provider、`initializeEnvironment`、`common.sh` 生成都还在树里，且旧的 rootfs 资产仍随包分发（发布包因此同时带两套环境，体积 713.6 MB） |
 | 文件系统的路径语义 | 现在直接用 guest 的 SFTP，路径是 guest 内的路径（`/root`、`/mnt/persist`）；原来 proot 的 `/sdcard`、`/data/data/<pkg>` 软挂载语义需要在 guest 侧补挂载或做映射 |
 | MCP 与 `repo:` | MCP 共享会话已能建立（走 `ensureTargetConnected` + `createSession`），但插件运行时目录在 guest 内的落点还没按新布局校一遍 |
-| 体积 | 打包后需记录实际 APK 大小；若同时保留 proot 资产，体积会明显偏大，P8 决定后才有定论 |
 | 端口冲突 | guest SSH 的回环端口目前写死 9022，需要和远端目标端口、以及设备上其他服务避让 |
