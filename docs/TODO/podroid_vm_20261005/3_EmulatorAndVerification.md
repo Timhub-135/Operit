@@ -37,6 +37,7 @@ For_Agent: 当前 PC 上运行 Podroid 的实测结论与可选验证路径；�
 | Podroid release APK v1.2.9（297.3 MB） | `tmp/podroid/Podroid-v1.2.9-release.apk` |
 | 旧版模拟器 30.3.5 / 30.4.5 / 31.3.10 | `tmp/android-emulator-arm64/emu-*/` |
 | 抓取并重放的 QEMU 启动器 | `tmp/android-emulator-arm64/run-arm64-avd.cmd`，生成脚本 `tmp/cn/build-arm64-launcher.js` |
+| 直接跑 guest 的夹具（路径 C，可用） | `tmp/podroid/rig/`：`run-guest.sh`（QEMU 启动）、`chan.py`（virtio-console 通道读写）、`validate-guest.sh` 与 `validate-guest2.sh`（断言脚本）、`resize-test.py`、`inspect-guest.sh`；资产在 `tmp/podroid/rig/assets/`，容器 `podroid-rig` 挂载该目录到 `/rig` |
 
 ## 四条可选路径
 
@@ -57,6 +58,30 @@ For_Agent: 当前 PC 上运行 Podroid 的实测结论与可选验证路径；�
 4. 断言：串口日志里出现 `Starting SSH...` / `Almost ready...` / `Ready!`；进入 guest 后 `podman run --rm alpine echo ok` 成功；往控制通道写 `RESIZE 40 120` 后 guest 的 `stty size` 变化
 
 这套断言就是上表里"接口契约"一栏的可执行版本，也是将来在真机上要重跑的那一份。
+
+## 路径 C 的实测结果（已完成）
+
+在本机用普通 QEMU 直接跑 Podroid 的 guest：把 release APK 里的 `vmlinuz-virt`、`initrd.img`、`alpine-rootfs.squashfs` 抽出来，按 Podroid `QemuEngine.buildCommand()` 的设备布局在 Linux 容器里启动（两个 virtio 块设备、SLIRP 网络、PL011 串口做启动日志、三条 virtio-console 通道），把 Android 侧的 socket 换成 unix socket，于是同一批通道可以从宿主机直接驱动。
+
+环境：Debian bookworm 容器 + `qemu-system-arm` 7.2（TCG，`thread=multi`）、4 vCPU、3 GB 内存、宿主 Intel Core Ultra 9 185H。
+
+结果：
+
+| 断言 | 实测 |
+| --- | --- |
+| guest 启动到就绪 | 首次启动（含 mkfs 与一次性 overlay 归一化）约 90 s；二次启动复用持久盘 **46.2 s** 进入 `Ready!` |
+| 三段就绪标记 | `[podroid-init] switching to real root` → `Network found` → **`Starting SSH...` → `Almost ready...` → `Ready!`** 全部出现 |
+| guest 身份 | Alpine **3.24.2**、内核 **7.1.5**、aarch64、4 vCPU、2957 MB、**podman 5.8.6** |
+| 挂载结构 | `/dev/vda` ext4 → `/mnt/persist`；`/dev/vdb` squashfs → `/mnt/lower`；`overlay on /`（plain lowerdir/upperdir/workdir）；`/var/lib/containers/storage`、`/var/lib/docker`、`/var/lib/lxc` 都落在持久盘上 |
+| 尺寸通道（分辨率契约） | 往控制通道写 `RESIZE 40 120` → `stty size < /dev/hvc0` 读到 `40 120`、`/run/term_size` 为 `40 120`；再写 `RESIZE 24 80` → 两边同步回到 `24 80`（双向可控） |
+| guest→宿主桥 | 宿主侧从 `host.sock` 收到守护进程自发的 `STATS containers=0`，行协议连通；`podroid-hostd` 以 pid 627 运行，`podroid-notify`/`podroid-forward` 是指向它的符号链接 |
+| 容器 | `podman run --rm docker.m.daocloud.io/library/alpine:latest echo container-ok` 拉取镜像后输出 **`container-ok`** |
+
+复现时踩到的三件事，值得写进后续的验证脚本：
+
+- **guest 内 SSH 在 22，不在 9922**：9922 是 Android 侧的宿主端口，映射关系是 `宿主 9922 → guest 22`。SLIRP 的 `hostfwd` 要按这个写，否则表现为连接被重置
+- **CN 网络下 Docker Hub 不可用**：`registry-1.docker.io` 被解析到无关地址并拒绝连接。换 `docker.m.daocloud.io` 这类镜像即可拉取成功——Operit 集成时应当在 guest 里预置 `registries.conf` 的镜像配置，否则用户第一次 `podman run` 必然失败
+- **非登录 SSH 的 PATH 很窄**：`podroid-notify` 等工具在 `/usr/local/bin`，直接 `command -v` 会找不到，用绝对路径或在登录 shell 里调用
 
 ## 真机验收清单（路径 B，等设备到位）
 

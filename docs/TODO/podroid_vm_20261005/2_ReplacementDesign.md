@@ -44,6 +44,7 @@ Operit 是 **LGPL-3.0**，Podroid 是 **GPL-2.0-only**。LGPLv3 与 GPLv2-only �
 - **X11/桌面**：Operit 不需要，可以整块砍掉，这也是自研比集成 Podroid 体积更可控的原因
 - **USB 直通**：非必需，先不做
 - **体积裁剪**：Podroid 的 213.5 MB squashfs 里装了 podman + docker + LXC + dropbear + iptables 全套。只留 podman（crun + fuse-overlayfs）能显著缩小；这是自研相对集成第三方应用的主要优势
+- **CN 网络适配**：guest 内的 `podman run` 默认走 Docker Hub，而国内对 `registry-1.docker.io` 的解析被污染，首次拉取必然失败。落地时应在 squashfs 里预置 `registries.conf` 的镜像配置，否则用户第一次跑容器就撞墙（路径 C 实测：换成 `docker.m.daocloud.io` 即可正常拉取并运行）
 
 ## 四、后端与设备矩阵
 

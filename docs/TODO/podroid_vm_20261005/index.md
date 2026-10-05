@@ -40,7 +40,7 @@ status: 设计进行中，等待批准；未改动任何产品代码
 | P2 | 体积策略 | 随包（APK 从 480.8 MB 涨到约 790 MB）／首启按需下载（约 312 MB，需校验与失败恢复）／拆 flavor |
 | P3 | 老用户迁移 | 不做迁移（新环境全新开始）／提供"从 proot 环境导出并手工导入"的说明（注意：导出与删除入口刚被放弃） |
 | P4 | x86_64 设备 | 只支持 arm64（与今天的 rootfs 一致）／另建 x86_64 guest 资产（成本翻倍） |
-| P5 | 模拟器验证 | 见 [3_EmulatorAndVerification.md](3_EmulatorAndVerification.md)：库存模拟器跑不了 arm64 镜像，需要在"PC 上直跑 guest""x86_64 端口""真机"之间选 |
+| P5 | 模拟器验证 | **已定：走路径 C**——本机用普通 QEMU 直接跑 Podroid 的 guest，已完成并全部通过（见 [3_EmulatorAndVerification.md](3_EmulatorAndVerification.md)）；库存模拟器跑不了 arm64 镜像，真机验收仍需设备 |
 
 ## 非目标
 
