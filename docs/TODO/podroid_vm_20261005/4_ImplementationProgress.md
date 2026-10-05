@@ -36,6 +36,26 @@ P2 已定：guest 资产与 QEMU 都打进发布包，首次启动不做下载�
 - **依赖镜像**：`avator/mmd` 的 bullet3 走 FetchContent，其 URL 由 `cmake/operit_git_source.cmake` 的 `OPERIT_GITHUB_URL_PREFIX` 决定。该支持原本只在 `ci/cn-mirror-build` 分支上，本分支不带时依赖会直连 github.com 并失败；已把该提交并入本分支。注意它是 **CMake 缓存变量**，旧 `.cxx` 目录里缓存着空值，换环境后要删掉该目录才会重新取值
 - **被打断的构建会留下锁**：中途杀掉 Gradle 后，残留的 `cmake`/`ninja` 进程仍占着 `_deps` 里的下载文件，下一次构建会以"另一个程序正在使用此文件"失败，甚至表现为 Gradle 客户端与单次守护进程互相等待的假死。重试前先确认没有残留的 `cmake`/`ninja`，必要时清掉对应模块的 `.cxx`
 
+## 模拟器实测（x86_64 AVD，Android 16）
+
+APK 装得进、跑得起来，而且新增的资产生命周期在设备上真的走通了：
+
+| 观察 | 结果 |
+| --- | --- |
+| 安装 | `adb install -r` 成功，713.6 MB 的包十几秒装完 |
+| 资产安装 | `VmAssets: VM assets installed: podroid-v1.2.9`：274 MB 的 guest 资产从 APK 抽出并逐件通过 SHA-256 校验 |
+| 持久盘 | `QemuVmEngine: Created storage image storage.img (4096 MB, sparse)` |
+| QEMU 启动 | 子进程被拉起（`/data/app/.../lib/arm64/libqemu-system-aarch64.so`），约 120 ms 后以退出码 1 结束 |
+| 失败原因 | `qemu.log`：`CANNOT LINK EXECUTABLE ...: library "libslirp.so" not found: needed by main executable` |
+| 远端 SSH 回归 | 通过：`SSH session connected` → `Opened shell channel … 80x24 PTY` → `Session … initialized successfully`，容器侧 `Accepted password for operit` |
+
+结论：**x86_64 模拟器跑不了这台 VM**，原因不在我们的代码，而在 ARM 翻译层——它能执行 arm64 可执行文件，却无法满足它依赖的 arm64 共享库（两个库都已随包落在 `lib/arm64/` 同一目录，`LD_LIBRARY_PATH` 也指向了那里）。这台设备上真正需要真机验收。模拟器能验证的部分（资产抽取与校验、持久盘、失败上报、SSH 回归）已经验证过了。
+
+顺带修掉的两个真问题（都是这次实测暴露的）：
+
+- **启动重试风暴**：打开终端、执行工具、MCP 建会话这些入口都会去要 provider，VM 起不来时每个入口都重拉一次 QEMU，实测一秒多里连拉四次、日志被刷满。现在 `QemuVmEngine.start` 用互斥量做到单飞，并在失败后 15 秒冷却期内直接返回上次的原因；修完实测只有一次启动尝试，其余调用方拿到同一份说明
+- **失败诊断为空**：动态链接失败这类问题根本走不到 guest，串口日志是空的，原来的报错只有"退出码 1"。现在把 `qemu.log` 的尾部并进错误信息，日志里能直接看到 `library "libslirp.so" not found`
+
 ## 尚未完成
 
 | 项 | 说明 |
