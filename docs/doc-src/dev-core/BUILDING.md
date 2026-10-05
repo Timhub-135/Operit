@@ -8,6 +8,8 @@
 
 在开始编译之前，请确保您已了解本项目的功能和目标。更多信息请参考项目主页的 [README.md](../../../README.md)。
 
+若构建机位于中国大陆网络，`github.com`、`huggingface.co` 与 Maven Central 都可能不可用，请先阅读 [BUILDING_CN_MIRRORS.md](BUILDING_CN_MIRRORS.md)，本文件中的下载链接与镜像选择在那种网络下需要替换。
+
 ## **目录**
 
 1. 第一步：安装系统基础依赖
