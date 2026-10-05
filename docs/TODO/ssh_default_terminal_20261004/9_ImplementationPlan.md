@@ -12,9 +12,9 @@ For_Agent: 本方案的落地阶段与每阶段出口条件，实施时按阶段
 - 阶段 2 主体完成：依赖升级、SSH shell 通道传输、provider 切换、旧方案清理、主机密钥 TOFU、凭据加密与硬编码口令清理、known_hosts 设置页入口均已落地；余下私钥导入校验与生成密钥对、隐藏执行错误状态映射
 - 阶段 3 与阶段 4 已完成：`activeTarget` 目标模型、默认远端、缺少配置时的引导、执行目标与已知主机设置界面、`environment="linux"` 文案、首启不再进本地安装向导
 - 阶段 5 已完成：rootfs 资产预装 `openssh-client`（新资产 `ubuntu-noble-aarch64-pd-v4.19.0.tar.xz`）、`sshpass`/`openssh-server` 路径与安装条目清理、第三方许可清单补齐
-- 阶段 0 部分完成：容器化 sshd 夹具已落地（`tools/ssh_test_host`）；性能基线未记录
-- 阶段 6、7 未开始（导出与磁盘释放、完整验证记录）
-- 真机验证：Android 16 x86_64 模拟器 + `ubuntu:latest` sshd 容器跑通远端目标全链路，证据见 [10_EmulatorVerification.md](10_EmulatorVerification.md)
+- 阶段 0 已完成：容器化 sshd 夹具（`tools/ssh_test_host`）与远端路径性能基线均已落地并记录
+- 阶段 6 已放弃（原计划的本地环境导出与磁盘释放，见下文），阶段 7 的验证记录已回填
+- 真机验证：Android 16 x86_64 模拟器 + `ubuntu:latest` sshd 容器跑通远端目标全链路，证据见 [10_EmulatorVerification.md](10_EmulatorVerification.md)；可复用的设计报告见 [../../doc-src/architecture/SSH_TERMINAL_ARCH.md](../../doc-src/architecture/SSH_TERMINAL_ARCH.md)
 
 ## 阶段 0：基线与夹具
 
@@ -83,10 +83,15 @@ For_Agent: 本方案的落地阶段与每阶段出口条件，实施时按阶段
 - 移除 `sshpass` 路径；移除“缺少 openssh-server”弹窗与 `SetupScreen` 条目
 - 出口条件：本地目标开箱即用，`areSshToolsInstalled()` 之类的旧检查被替换
 
-## 阶段 6：导出与磁盘释放
+## 阶段 6：导出与磁盘释放 [已放弃]
 
-- 按 [8_LocalEnvironmentExport.md](8_LocalEnvironmentExport.md) 实现导出（本地归档或同步到远端）与显式删除
-- 出口条件：导出可校验、删除后磁盘释放、重装可恢复
+维护者已决定不做这一步：不再提供本地 proot 环境的导出与显式删除入口，[8_LocalEnvironmentExport.md](8_LocalEnvironmentExport.md) 保留为设计记录，但不作为待办实施。
+
+放弃后的影响：
+
+- 本地目标的磁盘占用仍需用户自行处理，应用内没有回收入口
+- 应用数据里可能长期留着旧版 rootfs 包与已解压的 `usr/`（模拟器上实测遗留 64 MB 的 `v4.18.0` 包），这属于用户可见的既有行为，不再是本方案的待办
+- 若日后又要做，设计文档里的导出形态、删除范围与二次确认要求可以直接复用
 
 ## 阶段 7：文档与验证记录
 

@@ -22,7 +22,7 @@ SSH 今天不是一条独立执行路径，而是**寄生在 proot Ubuntu 上的
 - D2 SSH 客户端：**升级到 mwiede/jsch 并直连 shell channel**，替换今天的 JSch 0.1.55
 - D3 默认目标与引导：**只用用户自带主机配置**，首启引导“添加 SSH 主机”，不引入额外配对通道
 - D4 本地模式出厂：**rootfs 资产预装 openssh-client，并去掉 sshpass**；`openssh-server` 不再作为本地必需项
-- D5 用户数据：**提供导出后再删除**，用户可以把自己的 proot 环境导出或同步到远端后释放磁盘
+- D5 用户数据：~~提供导出后再删除~~ **已放弃**，不做应用内的导出与删除入口；用户自行处理本地环境占用的磁盘
 - D6 `environment="linux"`：**字符串不变，后端改为当前 SSH 主机**，本地环境通过显式选择使用
 
 ## 目标
@@ -30,13 +30,14 @@ SSH 今天不是一条独立执行路径，而是**寄生在 proot Ubuntu 上的
 - 终端默认目标改为远程 SSH 主机，SSH 会话不再经过 proot，也不再需要 Ubuntu 里的 `ssh`/`sshpass`
 - 本地 Ubuntu 保留但降级为可选目标，已发布行为不消失
 - 明确单一 SSH 配置来源，替换过时的 JSch 0.1.55 并补齐主机密钥校验
-- 本地环境开箱可用（预装 openssh-client），用户数据可导出后释放
+- 本地环境开箱可用（预装 openssh-client）；本地环境的磁盘占用由用户自行处理
 
 ## 非目标
 
 - 不改 Android 端文件系统（`environment="android"`）语义
 - 不引入自动降级：远端连不上就报错并让用户显式切换目标，不静默回落本地
 - 本次不删除本地环境代码（移除范围见 D1）
+- 不做本地环境的导出与删除入口（D5 已放弃，见阶段 6）
 - 本次不重写终端渲染层（CanvasTerminalView / AnsiTerminalEmulator）
 - 不在本次引入 mosh、X11、容器管理等 tabssh 附带能力
 
@@ -49,8 +50,8 @@ SSH 今天不是一条独立执行路径，而是**寄生在 proot Ubuntu 上的
 - [5_SecurityHardening.md](5_SecurityHardening.md)：主机密钥、凭据存储与硬编码口令
 - [6_CompatibilityAndMigration.md](6_CompatibilityAndMigration.md)：已发布接口的兼容与分仓推进顺序
 - [7_VerificationPlan.md](7_VerificationPlan.md)：验证与性能基准计划
-- [8_LocalEnvironmentExport.md](8_LocalEnvironmentExport.md)：本地环境的导出与磁盘释放流程
-- [9_ImplementationPlan.md](9_ImplementationPlan.md)：九个阶段的落地顺序与出口条件
+- [8_LocalEnvironmentExport.md](8_LocalEnvironmentExport.md)：本地环境的导出与磁盘释放流程，**已放弃**，仅作设计记录
+- [9_ImplementationPlan.md](9_ImplementationPlan.md)：九个阶段的落地顺序与出口条件（阶段 6 已放弃）
 - [10_EmulatorVerification.md](10_EmulatorVerification.md)：模拟器 + 容器 sshd 的端到端验证记录
 
 ## 可复用产物

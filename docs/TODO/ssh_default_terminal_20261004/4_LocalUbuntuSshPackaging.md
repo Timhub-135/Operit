@@ -51,4 +51,4 @@ For_Agent: 让 ssh 随 APK 内本地 Ubuntu 出厂的做法与边界，仅作为
 
 ## 与主方案的关系
 
-本文件解决本地模式的“开箱可用”；SSH 作为默认执行目标按 [2_TargetArchitecture.md](2_TargetArchitecture.md) 与 [3_SshClientChoice.md](3_SshClientChoice.md) 推进。用户若日后决定彻底移除本地环境，则本文只剩“rootfs 资产是否继续随包分发”的问题，删除流程见 [8_LocalEnvironmentExport.md](8_LocalEnvironmentExport.md)。
+本文件解决本地模式的“开箱可用”；SSH 作为默认执行目标按 [2_TargetArchitecture.md](2_TargetArchitecture.md) 与 [3_SshClientChoice.md](3_SshClientChoice.md) 推进。用户若日后决定彻底移除本地环境，则本文只剩“rootfs 资产是否继续随包分发”的问题；应用内的导出与删除入口已放弃实施，原设计留在 [8_LocalEnvironmentExport.md](8_LocalEnvironmentExport.md)。
